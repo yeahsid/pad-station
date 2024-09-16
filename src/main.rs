@@ -1,6 +1,5 @@
-use std::rc::Rc;
 use dioxus::prelude::*;
-use dioxus_web::launch;
+use std::rc::Rc;
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -89,39 +88,39 @@ fn app() -> Element {
     let base_url = Rc::new("http://padstation-prod.local:8000".to_string());
 
     // State variables for various pressure and temperature readings.
-    let supply_pt = use_signal( || "".to_string());
-    let fill_pt = use_signal( || "".to_string());
-    let tank_pt = use_signal( || "".to_string());
-    let test_stand_load = use_signal( || "".to_string());
-    let tank_tc = use_signal( || "".to_string());
+    let supply_pt = use_signal(|| "".to_string());
+    let fill_pt = use_signal(|| "".to_string());
+    let tank_pt = use_signal(|| "".to_string());
+    let test_stand_load = use_signal(|| "".to_string());
+    let tank_tc = use_signal(|| "".to_string());
 
     // State variables for valve statuses.
-    let fill_state = use_signal( || ValveState::Unknown);
-    let supply_state = use_signal( || ValveState::Unknown);
-    let pilot_state = use_signal( || ValveState::Unknown);
+    let fill_state = use_signal(|| ValveState::Unknown);
+    let supply_state = use_signal(|| ValveState::Unknown);
+    let pilot_state = use_signal(|| ValveState::Unknown);
 
     // State variables for selected options in dropdowns.
-    let selected_fill_option = use_signal( || "".to_string());
-    let selected_supply_option = use_signal( || "".to_string());
-    let selected_pilot_option = use_signal( || "".to_string());
+    let mut selected_fill_option = use_signal(|| "".to_string());
+    let mut selected_supply_option = use_signal(|| "".to_string());
+    let mut selected_pilot_option = use_signal(|| "".to_string());
 
     // State variables for SSE connection statuses.
-    let fill_sse_status = use_signal( || "".to_string());
-    let supply_sse_status = use_signal( || "".to_string());
-    let tank_sse_status = use_signal( || "".to_string());
-    let tank_tc_sse_status = use_signal( || "".to_string());
+    let fill_sse_status = use_signal(|| "".to_string());
+    let supply_sse_status = use_signal(|| "".to_string());
+    let tank_sse_status = use_signal(|| "".to_string());
+    // let tank_tc_sse_status = use_signal(|| "".to_string());
 
     // State variable to track if logging is active.
-    let is_logging = use_signal( || false);
+    let is_logging = use_signal(|| false);
 
     // Set up SSE connections for each data stream.
     {
         // Clone state variables to move into the closure.
-        let fill_pt = fill_pt.clone();
-        let fill_sse_status = fill_sse_status.clone();
+        let mut fill_pt = fill_pt.clone();
+        let mut fill_sse_status = fill_sse_status.clone();
         let base_url = base_url.clone();
 
-        use_effect( move || {
+        use_effect(move || {
             let event_source =
                 EventSource::new(&format!("{}/pressure/fill/datastream", base_url)).unwrap();
 
@@ -131,7 +130,7 @@ fn app() -> Element {
                 }
             }) as Box<dyn FnMut(_)>);
 
-            let fill_sse_status_clone = fill_sse_status.clone();
+            let mut fill_sse_status_clone = fill_sse_status.clone();
 
             let onerror_callback = Closure::wrap(Box::new(move |_event: web_sys::Event| {
                 fill_sse_status_clone.set(ConnectionStatus::Error.to_string());
@@ -164,12 +163,10 @@ fn app() -> Element {
         move |valve_type: &str,
               selected_option: &Signal<String>,
               valve_state: &Signal<ValveState>| {
-            let base_url = base_url.clone();
-            let selected_option_value = selected_option.get().clone();
+            let selected_option_value = selected_option().clone();
             if selected_option_value.is_empty() {
                 return;
             }
-            // Determine the URL based on the valve type.
             let url = match valve_type {
                 "fill" => format!("{}/valve/engine?state={}", base_url, selected_option_value),
                 "supply" => format!("{}/valve/relief?state={}", base_url, selected_option_value),
@@ -179,15 +176,13 @@ fn app() -> Element {
                 ),
                 _ => return,
             };
-            let valve_state = valve_state.clone();
-            // Perform the HTTP request asynchronously.
+            let mut valve_state = valve_state.clone(); // Clone outside async move
             spawn_local(async move {
                 let client = Client::new();
                 let resp = client.get(&url).send().await;
                 match resp {
                     Ok(response) => {
                         if response.status().is_success() {
-                            // Update the valve state based on the response.
                             valve_state.set(map_to_valve_state(&selected_option_value));
                         } else {
                             valve_state.set(ValveState::Error);
@@ -200,16 +195,15 @@ fn app() -> Element {
             });
         }
     };
-
     // Functions to handle logging and other actions.
     // Start Logging
     let start_logging = {
-        let is_logging = is_logging.clone();
+        let mut is_logging = is_logging.clone();
         let base_url = base_url.clone();
         move |_| {
             // Update the logging state to true.
             is_logging.set(true);
-            let is_logging = is_logging.clone();
+            let mut is_logging = is_logging.clone();
             let base_url = base_url.clone();
             spawn_local(async move {
                 let client = Client::new();
@@ -225,7 +219,7 @@ fn app() -> Element {
 
     // Stop Logging
     let stop_logging = {
-        let is_logging = is_logging.clone();
+        let mut is_logging = is_logging.clone();
         let base_url = base_url.clone();
         move |_| {
             // Update the logging state to false.
@@ -280,250 +274,257 @@ fn app() -> Element {
 
     // Render the component's UI.
     rsx! {
+            div {
+                class: "w-full min-h-screen flex flex-col container mx-auto p-4 justify-evenly max-w-screen-lg",
+                // Heading
+                h1 {
+                    class: "font-bold text-center text-4xl lg:text-5xl",
+                    "MHPR Nitrous Fill Box Control"
+                },
+
+                // Status Badges for SSE Connections
+                div {
+                    class: "flex justify-evenly gap-4",
+                    // Fill Pressure SSE Status Badge
+                    { status_badge(format!("Fill Pressure SSE: {:?}", fill_sse_status()), color_map(&fill_sse_status())) }
+                    // Supply Pressure SSE Status Badge
+                    { status_badge(format!("Supply Pressure SSE: {:?}", supply_sse_status()), color_map(&supply_sse_status())) }
+                    // Tank Pressure SSE Status Badge
+                    { status_badge(format!("Tank Pressure SSE: {:?}", tank_sse_status()), color_map(&tank_sse_status())) }
+                },
+
+                // Pilot Valve Controls
+    div {
+        class: "grid grid-cols-3 gap-4",
         div {
-            class: "w-full min-h-screen flex flex-col container mx-auto p-4 justify-evenly max-w-screen-lg",
-            // Heading
-            h1 {
-                class: "font-bold text-center text-4xl lg:text-5xl",
-                "MHPR Nitrous Fill Box Control"
-            },
-
-            // Status Badges for SSE Connections
+            class: "flex flex-col gap-8",
+            // Valve Label and Status
             div {
-                class: "flex justify-evenly gap-4",
-                // Fill Pressure SSE Status Badge
-                { status_badge(format!("Fill Pressure SSE: {:?}", fill_sse_status()), color_map(&fill_sse_status())) }
-                // Supply Pressure SSE Status Badge
-                { status_badge(format!("Supply Pressure SSE: {:?}", supply_sse_status()), color_map(&supply_sse_status())) }
-                // Tank Pressure SSE Status Badge
-                { status_badge(format!("Tank Pressure SSE: {:?}", tank_sse_status()), color_map(&tank_sse_status())) }
+                class: "flex gap-2 lg:gap-4",
+                p {
+                    class: "text-lg lg:text-xl",
+                    "Pilot Valve"
+                },
+                // Valve Status Badge
+                { valve_badge(format!("{:?}", pilot_state()), color_map(&pilot_state())) }
             },
-
-            // Pilot Valve Controls
+            // Control Buttons and Dropdown
             div {
-                class: "grid grid-cols-3 gap-4",
-                div {
-                    class: "flex flex-col gap-8",
-                    // Valve Label and Status
-                    div {
-                        class: "flex gap-2 lg:gap-4",
-                        p {
-                            class: "text-lg lg:text-xl",
-                            "Pilot Valve"
-                        },
-                        // Valve Status Badge
-                        { valve_badge(format!("{:?}", pilot_state()), color_map(&pilot_state())) }
+                class: "flex gap-4",
+                select {
+                    class: "form-select",
+                    value: "{selected_pilot_option()}",
+                    onchange: move |e| selected_pilot_option.set(e.value().clone()),
+                    // Embed the mapped `option` elements directly without using `res:`
+                    {
+                        actions.iter().map(|(value, name)| rsx!(
+                            option { value: "{value}", "{name}" }
+                        ))
+                    }
+                },
+                button {
+                    class: "btn",
+                    onclick: {
+                        let actuate_valve = actuate_valve.clone();
+                        move |_| actuate_valve("pilot", &selected_pilot_option, &pilot_state)
                     },
-                    // Control Buttons and Dropdown
+                    "Execute"
+                },
+            },
+        }, // End of inner div (flex flex-col gap-8)
+    }, // End of outer div (grid grid-cols-3 gap-4)
+
+    // Repeat similar blocks for other valves
+
+                // Bottom Row - Fill Valve, Fill Pressure, Tank Pressure
+                div {
+                    class: "grid grid-cols-3 gap-4",
+                    // Fill Valve Controls
                     div {
-                        class: "flex gap-4",
-                        select {
-                            class: "form-select",
-                            value: "{selected_pilot_option.get()}",
-                            onchange: move |e| selected_pilot_option.set(e.value().clone()),
-                            // Embed the mapped `option` elements directly without using `res:`
-                            {
-                                actions.iter().map(|(value, name)| rsx!(
-                                    option { value: "{value}", "{name}" }
-                                ))
-                            }
+                        class: "flex flex-col gap-8",
+                        div {
+                            class: "flex gap-2 lg:gap-4",
+                            p {
+                                class: "text-lg lg:text-xl",
+                                "Fill Valve"
+                            },
+                            { valve_badge(format!("{:?}", fill_state()), color_map(&fill_state())) }
                         },
-                        button {
+                        div {
+                            class: "flex gap-4",
+                            select {
+                                class: "form-select",
+                                value: "{selected_fill_option()}",
+                                onchange: move |e| selected_fill_option.set(e.value().clone()),
+                                {
+                                    actions.iter().map(|(value, name)| rsx!(
+                                        option { value: "{value}", "{name}" }
+                                    ))
+                                }
+                            },
+                            button {
                             class: "btn",
-                            onclick: move |_| actuate_valve("pilot", &selected_pilot_option, &pilot_state),
+                            onclick: {
+                                move |_| actuate_valve("fill", &selected_fill_option, &fill_state)
+                            },
                             "Execute"
                         },
+                        },
                     },
-                }, // End of inner div (flex flex-col gap-8)
-            }, // End of outer div (grid grid-cols-3 gap-4)
+                    // Fill Pressure Display
+                    div {
+                        class: "flex flex-col gap-4",
+                        p {
+                            class: "text-lg lg:text-xl text-end",
+                            "Fill Pressure"
+                        },
+                        p {
+                            class: "font-bold text-2xl lg:text-4xl text-end",
+                            "{fill_pt()} Bar" // Updated here
+                        },
+                    },
+                    // Tank Pressure Display
+                    div {
+                        class: "flex flex-col gap-4",
+                        p {
+                            class: "text-lg lg:text-xl text-end",
+                            "Tank Pressure"
+                        },
+                        p {
+                            class: "font-bold text-2xl lg:text-4xl text-end",
+                            "{tank_pt()} Bar" // Updated here
+                        },
+                    },
+                },
 
-            // Bottom Row - Fill Valve, Fill Pressure, Tank Pressure
-            div {
-                class: "grid grid-cols-3 gap-4",
-                // Fill Valve Controls
+                // Top Row - Dump Valve, Supply Pressure, Test Stand Force
+                div {
+                    class: "grid grid-cols-3 gap-4",
+                    // Dump Valve Controls
+                    div {
+                        class: "flex flex-col gap-8",
+                        div {
+                            class: "flex gap-2 lg:gap-4",
+                            p {
+                                class: "text-lg lg:text-xl",
+                                "Dump Valve"
+                            },
+                            { valve_badge(format!("{:?}", supply_state()), color_map(&supply_state())) }
+                        },
+                        div {
+                            class: "flex gap-4",
+                            select {
+                                class: "form-select",
+                                value: "{selected_supply_option()}",
+                                onchange: move |e| selected_supply_option.set(e.value().clone()),
+                                {
+                                    actions.iter().map(|(value, name)| rsx!(
+                                        option { value: "{value}", "{name}" }
+                                    ))
+                                }
+                            },
+                            button {
+                                class: "btn",
+                                
+                                "Execute"
+                            },
+                        },
+                    },
+                    // Supply Pressure Display
+                    div {
+                        class: "flex flex-col gap-4",
+                        p {
+                            class: "text-lg lg:text-xl text-end",
+                            "Supply Pressure"
+                        },
+                        p {
+                            class: "font-bold text-2xl lg:text-4xl text-end",
+                            "{supply_pt()} Bar" // Updated here
+                        },
+                    },
+                    // Test Stand Force Display
+                    div {
+                        class: "flex flex-col gap-4",
+                        p {
+                            class: "text-lg lg:text-xl text-end",
+                            "Test Stand Force"
+                        },
+                        p {
+                            class: "font-bold text-2xl lg:text-4xl text-end",
+                            "{test_stand_load()} N" // Updated here
+                        },
+                    },
+                },
+
+                // Logging Controls and Tank Temperature
+                div {
+                    class: "grid grid-cols-3 gap-4",
+                    // Logging Controls
+                    div {
+                        class: "flex flex-col gap-8",
+                        div {
+                            class: "flex gap-2 lg:gap-4",
+                            p {
+                                class: "text-lg lg:text-xl",
+                                "Logging"
+                            },
+                            { valve_badge(
+                                if is_logging() { "Active" } else { "Inactive" }.to_string(), // Updated here
+                                if is_logging() { "green" } else { "red" }, // Updated here
+                            ) }
+                        },
+                        div {
+                            class: "flex gap-4",
+                            button {
+                                class: "btn",
+                                onclick: start_logging,
+                                "Start"
+                            },
+                            button {
+                                class: "btn",
+                                onclick: stop_logging,
+                                "Stop"
+                            },
+                        },
+                    },
+                    // Tank Temperature Display
+                    div {
+                        class: "flex flex-col gap-4",
+                        p {
+                            class: "text-lg lg:text-xl text-end",
+                            "Tank Temp"
+                        },
+                        p {
+                            class: "font-bold text-2xl lg:text-4xl text-end",
+                            "{tank_tc()} °C" // Updated here
+                        },
+                    },
+                },
+
+                // Action Buttons (Ignite, Fire QD, Fire Vent)
                 div {
                     class: "flex flex-col gap-8",
                     div {
-                        class: "flex gap-2 lg:gap-4",
-                        p {
-                            class: "text-lg lg:text-xl",
-                            "Fill Valve"
-                        },
-                        { valve_badge(format!("{:?}", fill_state()), color_map(&fill_state())) }
-                    },
-                    div {
-                        class: "flex gap-4",
-                        select {
-                            class: "form-select",
-                            value: "{selected_fill_option.get()}",
-                            onchange: move |e| selected_fill_option.set(e.value().clone()),
-                            {
-                                actions.iter().map(|(value, name)| rsx!(
-                                    option { value: "{value}", "{name}" }
-                                ))
-                            }
-                        },
-                        button {
-                            class: "btn",
-                            onclick: move |_| actuate_valve("fill", &selected_fill_option, &fill_state),
-                            "Execute"
-                        },
-                    },
-                },
-                // Fill Pressure Display
-                div {
-                    class: "flex flex-col gap-4",
-                    p {
-                        class: "text-lg lg:text-xl text-end",
-                        "Fill Pressure"
-                    },
-                    p {
-                        class: "font-bold text-2xl lg:text-4xl text-end",
-                        "{fill_pt.get()} Bar"
-                    },
-                },
-                // Tank Pressure Display
-                div {
-                    class: "flex flex-col gap-4",
-                    p {
-                        class: "text-lg lg:text-xl text-end",
-                        "Tank Pressure"
-                    },
-                    p {
-                        class: "font-bold text-2xl lg:text-4xl text-end",
-                        "{tank_pt.get()} Bar"
-                    },
-                },
-            },
-
-            // Top Row - Dump Valve, Supply Pressure, Test Stand Force
-            div {
-                class: "grid grid-cols-3 gap-4",
-                // Dump Valve Controls
-                div {
-                    class: "flex flex-col gap-8",
-                    div {
-                        class: "flex gap-2 lg:gap-4",
-                        p {
-                            class: "text-lg lg:text-xl",
-                            "Dump Valve"
-                        },
-                        { valve_badge(format!("{:?}", supply_state()), color_map(&supply_state())) }
-                    },
-                    div {
-                        class: "flex gap-4",
-                        select {
-                            class: "form-select",
-                            value: "{selected_supply_option.get()}",
-                            onchange: move |e| selected_supply_option.set(e.value().clone()),
-                            {
-                                actions.iter().map(|(value, name)| rsx!(
-                                    option { value: "{value}", "{name}" }
-                                ))
-                            }
-                        },
-                        button {
-                            class: "btn",
-                            onclick: move |_| actuate_valve("supply", &selected_supply_option, &supply_state),
-                            "Execute"
-                        },
-                    },
-                },
-                // Supply Pressure Display
-                div {
-                    class: "flex flex-col gap-4",
-                    p {
-                        class: "text-lg lg:text-xl text-end",
-                        "Supply Pressure"
-                    },
-                    p {
-                        class: "font-bold text-2xl lg:text-4xl text-end",
-                        "{supply_pt.get()} Bar"
-                    },
-                },
-                // Test Stand Force Display
-                div {
-                    class: "flex flex-col gap-4",
-                    p {
-                        class: "text-lg lg:text-xl text-end",
-                        "Test Stand Force"
-                    },
-                    p {
-                        class: "font-bold text-2xl lg:text-4xl text-end",
-                        "{test_stand_load.get()} N"
-                    },
-                },
-            },
-
-            // Logging Controls and Tank Temperature
-            div {
-                class: "grid grid-cols-3 gap-4",
-                // Logging Controls
-                div {
-                    class: "flex flex-col gap-8",
-                    div {
-                        class: "flex gap-2 lg:gap-4",
-                        p {
-                            class: "text-lg lg:text-xl",
-                            "Logging"
-                        },
-                        { valve_badge(
-                            if is_logging.get() { "Active" } else { "Inactive" }.to_string(),
-                            if is_logging.get() { "green" } else { "red" },
-                        ) }
-                    },
-                    div {
                         class: "flex gap-4",
                         button {
-                            class: "btn",
-                            onclick: start_logging,
-                            "Start"
+                            class: "bg-red-500 text-white text-xl py-4 px-8 rounded",
+                            onclick: ignite,
+                            "Ignite"
                         },
                         button {
                             class: "btn",
-                            onclick: stop_logging,
-                            "Stop"
+                            onclick: fire_qd,
+                            "Fire QD"
+                        },
+                        button {
+                            class: "btn",
+                            onclick: fire_vent,
+                            "Fire Vent"
                         },
                     },
                 },
-                // Tank Temperature Display
-                div {
-                    class: "flex flex-col gap-4",
-                    p {
-                        class: "text-lg lg:text-xl text-end",
-                        "Tank Temp"
-                    },
-                    p {
-                        class: "font-bold text-2xl lg:text-4xl text-end",
-                        "{tank_tc.get()} °C"
-                    },
-                },
-            },
-
-            // Action Buttons (Ignite, Fire QD, Fire Vent)
-            div {
-                class: "flex flex-col gap-8",
-                div {
-                    class: "flex gap-4",
-                    button {
-                        class: "bg-red-500 text-white text-xl py-4 px-8 rounded",
-                        onclick: ignite,
-                        "Ignite"
-                    },
-                    button {
-                        class: "btn",
-                        onclick: fire_qd,
-                        "Fire QD"
-                    },
-                    button {
-                        class: "btn",
-                        onclick: fire_vent,
-                        "Fire Vent"
-                    },
-                },
-            },
+            }
         }
-    }
 }
 
 /// Helper function to create status badges.
